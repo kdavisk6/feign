@@ -22,6 +22,8 @@ import static feign.Util.checkNotNull;
 import static feign.Util.isBlank;
 import static feign.Util.isNotBlank;
 import static java.lang.String.format;
+
+import feign.Request.HttpMethod;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -185,9 +187,22 @@ public interface Client {
           }
         }
       }
+
       // Some servers choke on the default accept string.
       if (!hasAcceptHeader) {
         connection.addRequestProperty("Accept", "*/*");
+      }
+
+      // Some servers require a content-length header
+      if (contentLength == null &&
+          HttpMethod.POST == request.httpMethod()) {
+        if (request.body() == null || request.body().length == 0) {
+          /* no explicit content length and no body specified */
+          if (!gzipEncodedRequest && !deflateEncodedRequest) {
+            connection.setFixedLengthStreamingMode(0);
+            connection.setDoOutput(true);
+          }
+        }
       }
 
       if (request.body() != null) {

@@ -194,13 +194,19 @@ public abstract class AbstractClientTest {
   }
 
   @Test
-  public void noResponseBodyForPost() {
+  public void noResponseBodyForPost() throws Exception {
     server.enqueue(new MockResponse());
 
     TestInterface api = newBuilder()
         .target(TestInterface.class, "http://localhost:" + server.getPort());
 
     api.noPostBody();
+
+    RecordedRequest recordedRequest = server.takeRequest();
+
+    /* ensure that the content length is set for now response bodies */
+    assertThat(recordedRequest.getMethod()).isEqualToIgnoringCase("POST");
+    assertThat(recordedRequest.getHeader("Content-Length")).isEqualToIgnoringCase("0");
   }
 
   @Test
