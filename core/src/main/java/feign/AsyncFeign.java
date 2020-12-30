@@ -13,33 +13,35 @@
  */
 package feign;
 
-import java.io.IOException;
-import java.lang.reflect.Type;
-import java.util.Optional;
-import java.util.concurrent.*;
-import java.util.function.Supplier;
 import feign.Logger.NoOpLogger;
 import feign.Request.Options;
 import feign.Target.HardCodedTarget;
 import feign.codec.Decoder;
 import feign.codec.Encoder;
 import feign.codec.ErrorDecoder;
+import java.io.IOException;
+import java.lang.reflect.Type;
+import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 
 /**
  * Enhances {@link Feign} to provide support for asynchronous clients. Context (for example for
  * session cookies or tokens) is explicit, as calls for the same session may be done across several
  * threads. <br>
  * <br>
- * {@link Retryer} is not supported in this model, as that is a blocking API.
- * {@link ExceptionPropagationPolicy} is made redundant as {@link RetryableException} is never
- * thrown. <br>
+ * {@link Retryer} is not supported in this model, as that is a blocking API. {@link
+ * ExceptionPropagationPolicy} is made redundant as {@link RetryableException} is never thrown. <br>
  * Alternative approaches to retrying can be handled through {@link AsyncClient clients}. <br>
  * <br>
  * Target interface methods must return {@link CompletableFuture} with a non-wildcard type. As the
  * completion is done by the {@link AsyncClient}, it is important that any subsequent processing on
  * the thread be short - generally, this should involve notifying some other thread of the work to
  * be done (for example, creating and submitting a task to an {@link ExecutorService}).
- *
  */
 @Experimental
 public abstract class AsyncFeign<C> extends Feign {
@@ -222,7 +224,8 @@ public abstract class AsyncFeign<C> extends Feign {
     /**
      * @see Builder#invocationHandlerFactory(InvocationHandlerFactory)
      */
-    public AsyncBuilder<C> invocationHandlerFactory(InvocationHandlerFactory invocationHandlerFactory) {
+    public AsyncBuilder<C> invocationHandlerFactory(
+        InvocationHandlerFactory invocationHandlerFactory) {
       builder.invocationHandlerFactory(invocationHandlerFactory);
       return this;
     }
@@ -272,9 +275,9 @@ public abstract class AsyncFeign<C> extends Feign {
 
     final AsyncInvocation<C> invocationContext = activeContext.get();
 
+    invocationContext.setRequest(request);
     invocationContext.setResponseFuture(
         client.execute(request, options, Optional.ofNullable(invocationContext.context())));
-
 
     return result;
   }
@@ -285,7 +288,7 @@ public abstract class AsyncFeign<C> extends Feign {
   }
 
 
-  private Object stageDecode(Response response, Type type) {
+  private Object stageDecode(Response response, Type type) throws IOException {
     final AsyncInvocation<C> invocationContext = activeContext.get();
 
     final CompletableFuture<Object> result = new CompletableFuture<>();
@@ -294,9 +297,12 @@ public abstract class AsyncFeign<C> extends Feign {
       final long elapsedTime = elapsedTime(invocationContext.startNanos());
 
       if (t != null) {
-        if (logLevel != Logger.Level.NONE && t instanceof IOException) {
+        if (IOException.class.isAssignableFrom(t.getClass())) {
           final IOException e = (IOException) t;
-          logger.logIOException(invocationContext.configKey(), logLevel, e, elapsedTime);
+          if (logLevel != Logger.Level.NONE) {
+            logger.logIOException(invocationContext.configKey(), logLevel, e, elapsedTime);
+          }
+          result.completeExceptionally(e);
         }
         result.completeExceptionally(t);
       } else {
@@ -317,12 +323,18 @@ public abstract class AsyncFeign<C> extends Feign {
     try {
       return result.join();
     } catch (final CompletionException e) {
-      final Response r = invocationContext.responseFuture().join();
       Throwable cause = e.getCause();
       if (cause == null) {
         cause = e;
       }
+
+      if (cause instanceof IOException) {
+        throw FeignException.errorExecuting(invocationContext.getRequest(), (IOException) cause);
+      }
+
+      final Response r = invocationContext.responseFuture().join();
       throw new AsyncJoinException(r.status(), cause.getMessage(), r.request(), cause);
+
     }
   }
 

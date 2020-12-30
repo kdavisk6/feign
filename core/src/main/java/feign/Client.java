@@ -196,7 +196,7 @@ public interface Client {
       if (contentLength == null &&
           HttpMethod.POST == request.httpMethod()) {
         if (request.body() == null || request.body().length == 0) {
-          /* no explicit content length and no body specified */
+
           if (!gzipEncodedRequest && !deflateEncodedRequest) {
             connection.setFixedLengthStreamingMode(0);
             connection.setDoOutput(true);

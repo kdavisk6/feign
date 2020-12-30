@@ -26,6 +26,7 @@ class AsyncInvocation<C> {
   private final MethodInfo methodInfo;
   private final long startNanos;
   private CompletableFuture<Response> responseFuture;
+  private Request request;
 
   AsyncInvocation(C context, MethodInfo methodInfo) {
     super();
@@ -60,5 +61,13 @@ class AsyncInvocation<C> {
 
   CompletableFuture<Response> responseFuture() {
     return responseFuture;
+  }
+
+  void setRequest(Request request) {
+    this.request = request;
+  }
+
+  Request getRequest() {
+    return this.request;
   }
 }
